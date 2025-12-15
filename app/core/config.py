@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "BriefStreet API"
 
     OPENAI_API_KEY: str
-    FMP_API_KEY: str = "demo"  
+    FMP_API_KEY: str
 
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
 

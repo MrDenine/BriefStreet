@@ -6,8 +6,8 @@ router = APIRouter()
 
 @router.post("/analyze/{symbol}", response_model=AnalysisResponse)
 async def analyze_stock(symbol: str):
-    transcript = await market_data.get_mock_transcript(symbol)
+    transcript = await market_data.get_earnings_transcript(symbol)
     
-    result = llm_service.analyze_transcript(transcript)
+    result = llm_service.analyze_transcript(symbol, transcript['content'])
     
     return result
