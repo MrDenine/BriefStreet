@@ -7,3 +7,10 @@ httpx
 python-dotenv
 sqlmodel 
 aiosqlite
+
+pytest
+pytest-asyncio
+pytest-cov
+httpx
+pytest-mock
+faker

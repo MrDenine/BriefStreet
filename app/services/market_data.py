@@ -1,8 +1,6 @@
-# app/services/market_data.py
 import httpx
 from app.core.config import settings
 
-# Mock Data (สำรองไว้ใช้ถ้าไม่มี API Key หรือทดสอบฟรี)
 async def get_mock_transcript(symbol: str):
     return [
         {
@@ -16,9 +14,6 @@ async def get_mock_transcript(symbol: str):
                     """
         }
     ]
-            
-
-
 
 async def get_earnings_transcript(symbol: str):
     """
@@ -28,9 +23,7 @@ async def get_earnings_transcript(symbol: str):
         print("⚠️ ไม่พบ FMP API Key -> ใช้ Mock Data แทน")
         return await get_mock_transcript(symbol)
 
-    # ดึงไตรมาสล่าสุด (limit=1)
     url = f"https://financialmodelingprep.com/api/v3/earning_call_transcript/{symbol}?quarter=3&year=2024&apikey={settings.FMP_API_KEY}" 
-    # Note: ของจริงอาจต้องเขียน Logic หา Year/Quarter ล่าสุด แต่นี่ Hardcode เทสไปก่อนครับ
     
     async with httpx.AsyncClient() as client:
         try:
@@ -41,7 +34,6 @@ async def get_earnings_transcript(symbol: str):
                 print(f"❌ ไม่พบข้อมูล Transcript ของ {symbol} -> ใช้ Mock แทน")
                 return await get_mock_transcript(symbol)
                 
-            # FMP ส่งกลับมาเป็น List เอาตัวแรกสุด
             return {
                 "date": data[0]['date'], 
                 "content": data[0]['content']
