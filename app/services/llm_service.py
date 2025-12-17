@@ -10,7 +10,7 @@ from app.core.logging_config import get_logger
 logger = get_logger(__name__)
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
-@retry_on_exception(max_retries=2, exceptions=(OpenAIError,), delay=2.0)
+@retry_on_exception(max_retries=settings.LLM_MAX_RETRIES, exceptions=(OpenAIError,), delay=settings.LLM_RETRY_DELAY)
 @handle_exceptions(default_exception=LLMServiceException)
 def analyze_transcript(symbol: str, text: str) -> AnalysisResponse:
     logger.info(f"🤖 AI analyzing transcript for {symbol} (length: {len(text)} chars)")
@@ -29,14 +29,14 @@ def analyze_transcript(symbol: str, text: str) -> AnalysisResponse:
     and identify the CEO's tone.
     
     Transcript:
-    {text[:15000]}  # ตัด text เพื่อป้องกัน Token เกิน (เบื้องต้น)
+    {text[:settings.LLM_TRANSCRIPT_MAX_LENGTH_ANALYSIS]}
     """
 
     try:
         completion = client.beta.chat.completions.parse(
-            model="gpt-4o-mini",  
+            model=settings.LLM_MODEL,  
             messages=[
-                {"role": "system", "content": "You are a helpful financial assistant. Respond in JSON format only."},
+                {"role": "system", "content": settings.LLM_SYSTEM_PROMPT_ANALYSIS},
                 {"role": "user", "content": prompt},
             ],
             response_format=AnalysisResponse, 
@@ -52,10 +52,10 @@ def analyze_transcript(symbol: str, text: str) -> AnalysisResponse:
             details={"symbol": symbol, "error_type": type(e).__name__}
         )
 
-@retry_on_exception(max_retries=2, exceptions=(OpenAIError,), delay=2.0)
+@retry_on_exception(max_retries=settings.LLM_MAX_RETRIES, exceptions=(OpenAIError,), delay=settings.LLM_RETRY_DELAY)
 @handle_exceptions(default_exception=LLMServiceException)
 async def chat_with_transcript(symbol: str, text: str, question: str) -> str:
-    logger.info(f"💬 User asking about {symbol}: {question[:100]}")
+    logger.info(f"💬 User asking about {symbol}: {question[:settings.LOG_MAX_QUESTION_LENGTH]}")
     
     if not text or len(text.strip()) == 0:
         logger.error(f"Empty transcript for chat request on {symbol}")
@@ -70,20 +70,20 @@ async def chat_with_transcript(symbol: str, text: str, question: str) -> str:
     
     Instructions:
     1. Answer the question based ONLY on the provided transcript below.
-    2. If the answer is not found in the transcript, strictly say "ข้อมูลนี้ไม่ได้ถูกพูดถึงในการประชุมครั้งนี้ครับ" (or English equivalent).
+    2. If the answer is not found in the transcript, strictly say "{settings.LLM_DEFAULT_NOT_FOUND_MESSAGE}" (or English equivalent).
     3. Keep the answer concise and professional.
     
     Transcript context (partial):
-    {text[:25000]} 
+    {text[:settings.LLM_TRANSCRIPT_MAX_LENGTH_CHAT]} 
     
     User Question: {question}
     """
 
     try:
         completion = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.LLM_CHAT_MODEL,
             messages=[
-                {"role": "system", "content": "You are a helpful financial assistant."},
+                {"role": "system", "content": settings.LLM_SYSTEM_PROMPT_CHAT},
                 {"role": "user", "content": prompt},
             ]
         )
@@ -98,7 +98,7 @@ async def chat_with_transcript(symbol: str, text: str, question: str) -> str:
             details={"symbol": symbol, "error_type": type(e).__name__}
         )
 
-@retry_on_exception(max_retries=2, exceptions=(OpenAIError,), delay=2.0)
+@retry_on_exception(max_retries=settings.LLM_MAX_RETRIES, exceptions=(OpenAIError,), delay=settings.LLM_RETRY_DELAY)
 @handle_exceptions(default_exception=LLMServiceException)
 async def analyze_consistency(symbol: str, text: str) -> ConsistencyResponse:
     logger.info(f"🕵️ Analyzing consistency for {symbol}")
@@ -128,11 +128,11 @@ async def analyze_consistency(symbol: str, text: str) -> ConsistencyResponse:
     You are a behavioral finance expert. Compare the sentiment between the "Prepared Remarks" (scripted) and the "Q&A Session" (unscripted) for {symbol}.
     
     Data:
-    --- PREPARED REMARKS (First 10k chars) ---
-    {prepared_text[:10000]}
+    --- PREPARED REMARKS (First {settings.LLM_TRANSCRIPT_MAX_LENGTH_CONSISTENCY_PREPARED} chars) ---
+    {prepared_text[:settings.LLM_TRANSCRIPT_MAX_LENGTH_CONSISTENCY_PREPARED]}
     
-    --- Q&A SESSION (First 10k chars) ---
-    {qa_text[:10000]}
+    --- Q&A SESSION (First {settings.LLM_TRANSCRIPT_MAX_LENGTH_CONSISTENCY_QA} chars) ---
+    {qa_text[:settings.LLM_TRANSCRIPT_MAX_LENGTH_CONSISTENCY_QA]}
     
     Task:
     1. Analyze the sentiment/tone of BOTH sections separately.
@@ -142,9 +142,9 @@ async def analyze_consistency(symbol: str, text: str) -> ConsistencyResponse:
 
     try:
         completion = client.beta.chat.completions.parse(
-            model="gpt-4o-mini",
+            model=settings.LLM_CONSISTENCY_MODEL,
             messages=[
-                {"role": "system", "content": "You are a cynical financial auditor looking for inconsistencies. Respond in JSON."},
+                {"role": "system", "content": settings.LLM_SYSTEM_PROMPT_CONSISTENCY},
                 {"role": "user", "content": prompt},
             ],
             response_format=ConsistencyResponse,

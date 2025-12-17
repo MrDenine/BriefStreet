@@ -1,99 +1,216 @@
-import asyncio
-import httpx
+# app/services/market_data.py
+"""
+High-level market data service with provider abstraction.
+
+This service acts as a facade, delegating to configured data providers.
+Supports multiple providers with fallback mechanisms.
+"""
+from typing import Dict, List, Optional
+from app.data_sources.base import DataSourceProvider
+from app.data_sources import FMPProvider, YFinanceProvider, MockProvider
 from app.core.config import settings
-from app.core.exceptions import DataFetchException, TranscriptNotFoundException
-from app.core.decorators import retry_on_exception
+from app.core.exceptions import (
+    AllProvidersFailedException,
+    ProviderNotImplementedException,
+    DataFetchException
+)
 from app.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# Global provider instance (can be changed via dependency injection)
+_current_provider: Optional[DataSourceProvider] = None
 
-@retry_on_exception(max_retries=3, exceptions=(httpx.HTTPError,), delay=1.0)
-async def get_earnings_transcript(symbol: str, quarter: int = 3, year: int = 2024) -> dict:
-    if not settings.FMP_API_KEY:
-        logger.error("FMP API key not configured")
-        raise DataFetchException(
-            source="FMP API",
-            details={"reason": "API key not configured"}
-        )
+
+def get_provider() -> DataSourceProvider:
+    """
+    Get the currently configured data provider.
     
-    logger.debug(f"Fetching transcript for {symbol} Q{quarter} {year}")
-    url = f"https://financialmodelingprep.com/stable/earning-call-transcript?symbol={symbol}&quarter={quarter}&year={year}&apikey={settings.FMP_API_KEY}" 
+    Priority:
+    1. Explicitly set provider via set_provider()
+    2. Provider from settings.DATA_PROVIDER
+    3. Default to FMP
+    """
+    global _current_provider
     
-    async with httpx.AsyncClient() as client:
+    if _current_provider is not None:
+        return _current_provider
+    
+    # Get provider from settings
+    provider_name = getattr(settings, 'DATA_PROVIDER', 'fmp').lower()
+    
+    if provider_name == 'yfinance':
+        logger.info("Using YFinance data provider")
+        return YFinanceProvider()
+    elif provider_name == 'mock':
+        logger.info("Using Mock data provider")
+        return MockProvider()
+    else:  # Default to FMP
+        logger.info("Using FMP data provider")
+        return FMPProvider()
+
+
+def set_provider(provider: DataSourceProvider) -> None:
+    """
+    Set the data provider to use for all subsequent requests.
+    Useful for testing and runtime provider switching.
+    
+    Args:
+        provider: Instance of DataSourceProvider to use
+    """
+    global _current_provider
+    _current_provider = provider
+    logger.info(f"Data provider set to: {provider.name}")
+
+
+def reset_provider() -> None:
+    """Reset to default provider from settings"""
+    global _current_provider
+    _current_provider = None
+    logger.info("Data provider reset to default")
+
+
+async def get_earnings_transcript(
+    symbol: str, 
+    quarter: int = 3, 
+    year: int = 2024,
+    fallback: bool = False
+) -> Dict:
+    """
+    Fetch earnings call transcript using configured provider.
+    
+    Args:
+        symbol: Stock ticker symbol
+        quarter: Quarter (1-4)
+        year: Year
+        fallback: If True, try alternative providers on failure
+        
+    Returns:
+        Dictionary with 'date' and 'content' keys
+    """
+    provider = get_provider()
+    
+    if not fallback:
+        # Single provider mode
+        return await provider.get_transcript(symbol, quarter, year)
+    
+    # Multi-provider fallback mode
+    providers = [provider]
+    
+    # Add fallback providers (skip if same as primary)
+    if not isinstance(provider, MockProvider):
+        providers.append(MockProvider())
+    
+    errors = {}
+    for prov in providers:
         try:
-            response = await client.get(url, timeout=30.0)
-            response.raise_for_status()
-            data = response.json()
-            
-            if not data:
-                logger.warning(f"No transcript data found for {symbol}")
-                raise TranscriptNotFoundException(symbol=symbol, quarter="Q3 2024")
-            
-            logger.info(f"✅ Successfully fetched transcript for {symbol} (Date: {data[0]['date']})")
-            return {
-                "date": data[0]['date'], 
-                "content": data[0]['content']
-            }
-            
-        except httpx.HTTPError as e:
-            logger.error(f"HTTP error fetching {symbol}: {str(e)}")
-            raise DataFetchException(
-                source="FMP API",
-                details={"symbol": symbol, "error": str(e)}
-            )
-        except (KeyError, IndexError) as e:
-            logger.error(f"Data parsing error for {symbol}: {str(e)}")
-            raise TranscriptNotFoundException(symbol=symbol, quarter=f"Q{quarter} {year}")
-        
-@retry_on_exception(max_retries=3, exceptions=(httpx.HTTPError,), delay=1.0)
-async def get_financial_metrics(symbol: str, limit: int = 5) -> dict:
-    """ดึงข้อมูลการเงินสำคัญสำหรับ Valuation"""
-    async with httpx.AsyncClient() as client:
-        # 1. ดึง Key Metrics (PE, PBV, BVPS, EPS, FCF)
-        metrics_url = f"https://financialmodelingprep.com/stable/key-metrics-ttm?symbol={symbol}&apikey={settings.FMP_API_KEY}"
-        
-        # 2. ดึงราคาปัจจุบัน
-        quote_url = f"https://financialmodelingprep.com/stable/quote?symbol={symbol}&apikey={settings.FMP_API_KEY}"
-        
-        # 3. ดึง Cash Flow ย้อนหลัง 5 ปี (สำหรับ DCF)
-        cf_url = f"https://financialmodelingprep.com/stable/cash-flow-statement?symbol={symbol}&period=annual&limit={limit}&apikey={settings.FMP_API_KEY}"
-
-        # ยิง Request แบบ Parallel (เพื่อให้เร็ว)
-        responses = await asyncio.gather(
-            client.get(metrics_url),
-            client.get(quote_url),
-            client.get(cf_url)
-        )
-        
-        metrics_data = responses[0].json()
-        quote_data = responses[1].json()
-        cf_data = responses[2].json()
-
-        if not metrics_data or not quote_data:
-             raise DataFetchException(source="FMP Metrics", details={"symbol": symbol})
-
-        return {
-            "metrics": metrics_data[0], # PE, PBV, DividendYield, etc.
-            "price": quote_data[0]['price'],
-            "cash_flows": cf_data # List of annual reports
-        }
+            logger.info(f"Attempting to fetch transcript from {prov.name}")
+            return await prov.get_transcript(symbol, quarter, year)
+        except ProviderNotImplementedException as e:
+            logger.warning(f"{prov.name} doesn't support transcripts: {e.message}")
+            errors[prov.name] = e.message
+            continue
+        except Exception as e:
+            logger.error(f"{prov.name} failed: {str(e)}")
+            errors[prov.name] = str(e)
+            continue
     
-@retry_on_exception(max_retries=3, exceptions=(httpx.HTTPError,), delay=1.0)
-async def get_peers_valuation(symbol: str) -> list:
-    """ดึง PE/PBV ของคู่แข่ง"""
-    # 1. หา list คู่แข่ง
-    peers_url = f"https://financialmodelingprep.com/stable/stock-peers?symbol={symbol}&apikey={settings.FMP_API_KEY}"
+    # All providers failed
+    raise AllProvidersFailedException(
+        feature="earnings_transcript",
+        attempted_providers=[p.name for p in providers],
+        errors=errors
+    )
+
+
+async def get_financial_metrics(
+    symbol: str, 
+    limit: int = 5,
+    fallback: bool = False
+) -> Dict:
+    """
+    Fetch financial metrics for valuation analysis.
     
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(peers_url)
-        peers_list = resp.json() 
-        if not peers_list: return []
+    Args:
+        symbol: Stock ticker symbol
+        limit: Number of historical periods
+        fallback: If True, try alternative providers on failure
         
-        # สมมติเอาแค่ 5 ตัวแรก
-        top_peers = peers_list[0]['peersList'][:5]
+    Returns:
+        Dictionary with 'metrics', 'price', and 'cash_flows' keys
+    """
+    provider = get_provider()
+    
+    if not fallback:
+        return await provider.get_financial_metrics(symbol, limit)
+    
+    # Multi-provider fallback mode
+    providers = [provider]
+    
+    # Add YFinance as fallback if not primary
+    if not isinstance(provider, YFinanceProvider):
+        providers.append(YFinanceProvider())
+    
+    # Add Mock as last resort
+    if not isinstance(provider, MockProvider):
+        providers.append(MockProvider())
+    
+    errors = {}
+    for prov in providers:
+        try:
+            logger.info(f"Attempting to fetch metrics from {prov.name}")
+            return await prov.get_financial_metrics(symbol, limit)
+        except ProviderNotImplementedException as e:
+            logger.warning(f"{prov.name} doesn't support metrics: {e.message}")
+            errors[prov.name] = e.message
+            continue
+        except Exception as e:
+            logger.error(f"{prov.name} failed: {str(e)}")
+            errors[prov.name] = str(e)
+            continue
+    
+    raise AllProvidersFailedException(
+        feature="financial_metrics",
+        attempted_providers=[p.name for p in providers],
+        errors=errors
+    )
+
+
+async def get_peers_valuation(symbol: str, fallback: bool = False) -> List[str]:
+    """
+    Fetch list of peer companies.
+    
+    Args:
+        symbol: Stock ticker symbol
+        fallback: If True, try alternative providers on failure
         
-        # ดึง Quote ของคู่แข่งเพื่อหา PE (แบบง่าย) หรือจะวนลูปดึง Key Metrics ก็ได้
-        # FMP มี endpoint /v4/batch-request-end-of-day-prices หรือวนลูปเอาก็ได้สำหรับ Micro SaaS
-        # เพื่อความง่ายในตัวอย่างนี้ ผมจะสมมติว่าดึง PE/PBV มาได้แล้ว
-        return top_peers # ส่งรายชื่อกลับไปก่อน (ใน valuation_service ค่อยไปดึงค่า)
+    Returns:
+        List of peer ticker symbols
+    """
+    provider = get_provider()
+    
+    if not fallback:
+        return await provider.get_peers(symbol)
+    
+    # Multi-provider fallback mode
+    providers = [provider, MockProvider()]
+    
+    errors = {}
+    for prov in providers:
+        try:
+            logger.info(f"Attempting to fetch peers from {prov.name}")
+            return await prov.get_peers(symbol)
+        except ProviderNotImplementedException as e:
+            logger.warning(f"{prov.name} doesn't support peers: {e.message}")
+            errors[prov.name] = e.message
+            continue
+        except Exception as e:
+            logger.error(f"{prov.name} failed: {str(e)}")
+            errors[prov.name] = str(e)
+            continue
+    
+    raise AllProvidersFailedException(
+        feature="peer_comparison",
+        attempted_providers=[p.name for p in providers],
+        errors=errors
+    )

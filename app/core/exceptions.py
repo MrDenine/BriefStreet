@@ -109,3 +109,41 @@ class TranscriptNotFoundException(BaseException):
             status_code=status.HTTP_404_NOT_FOUND,
             details=details
         )
+
+
+class ProviderNotImplementedException(BaseException):
+    """Exception raised when a data provider doesn't support a specific feature"""
+    def __init__(self, provider: str, feature: str):
+        super().__init__(
+            message=f"Provider '{provider}' does not support '{feature}'",
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            details={"provider": provider, "feature": feature}
+        )
+
+
+class ProviderUnavailableException(BaseException):
+    """Exception raised when a data provider is temporarily unavailable"""
+    def __init__(self, provider: str, reason: Optional[str] = None):
+        details = {"provider": provider}
+        if reason:
+            details["reason"] = reason
+        
+        super().__init__(
+            message=f"Data provider '{provider}' is currently unavailable",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            details=details
+        )
+
+
+class AllProvidersFailedException(BaseException):
+    """Exception raised when all configured providers fail to fetch data"""
+    def __init__(self, feature: str, attempted_providers: list, errors: dict):
+        super().__init__(
+            message=f"All providers failed to fetch '{feature}'",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            details={
+                "feature": feature,
+                "attempted_providers": attempted_providers,
+                "errors": errors
+            }
+        )
