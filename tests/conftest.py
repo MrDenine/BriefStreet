@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.main import app
 from app.core.database import get_session
+from app.models.market_data import TranscriptResponse
 
 # ใช้ In-Memory Database สำหรับ Testing
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -63,23 +64,21 @@ async def client(test_session):
 @pytest.fixture
 def mock_transcript():
     """Mock Earnings Transcript Data"""
-    return [
-        {
-            "date": "2024-10-25",
-            "content": """
-            Operator: Good afternoon. Welcome to AAPL Q4 Earnings Call.
-            CEO: Thank you. We are happy to report a record-breaking quarter. 
-            Revenue is up 25% year-over-year due to strong demand in our AI sector.
-            However, we are seeing some supply chain headwinds in Asia.
-            Overall, we are very confident in our long-term strategy.
-            
-            Question-and-Answer Session
-            
-            Analyst: What about the supply chain issues?
-            CEO: We are actively working on diversifying our suppliers.
-            """
-        }
-    ]
+    return TranscriptResponse(
+        date="2024-10-25",
+        content="""
+        Operator: Good afternoon. Welcome to AAPL Q4 Earnings Call.
+        CEO: Thank you. We are happy to report a record-breaking quarter. 
+        Revenue is up 25% year-over-year due to strong demand in our AI sector.
+        However, we are seeing some supply chain headwinds in Asia.
+        Overall, we are very confident in our long-term strategy.
+        
+        Question-and-Answer Session
+        
+        Analyst: What about the supply chain issues?
+        CEO: We are actively working on diversifying our suppliers.
+        """
+    )
 
 @pytest.fixture
 def mock_analysis_response():

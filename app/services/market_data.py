@@ -8,6 +8,11 @@ Supports multiple providers with fallback mechanisms.
 from typing import Dict, List, Optional
 from app.data_sources.base import DataSourceProvider
 from app.data_sources import FMPProvider, YFinanceProvider, MockProvider
+from app.models.market_data import (
+    TranscriptResponse, 
+    FinancialMetricsResponse, 
+    PeerListResponse
+)
 from app.core.config import settings
 from app.core.exceptions import (
     AllProvidersFailedException,
@@ -75,7 +80,7 @@ async def get_earnings_transcript(
     quarter: int = 3, 
     year: int = 2024,
     fallback: bool = False
-) -> Dict:
+) -> TranscriptResponse:
     """
     Fetch earnings call transcript using configured provider.
     
@@ -86,7 +91,7 @@ async def get_earnings_transcript(
         fallback: If True, try alternative providers on failure
         
     Returns:
-        Dictionary with 'date' and 'content' keys
+        TranscriptResponse with date and content
     """
     provider = get_provider()
     
@@ -127,7 +132,7 @@ async def get_financial_metrics(
     symbol: str, 
     limit: int = 5,
     fallback: bool = False
-) -> Dict:
+) -> FinancialMetricsResponse:
     """
     Fetch financial metrics for valuation analysis.
     
@@ -137,7 +142,7 @@ async def get_financial_metrics(
         fallback: If True, try alternative providers on failure
         
     Returns:
-        Dictionary with 'metrics', 'price', and 'cash_flows' keys
+        FinancialMetricsResponse with metrics, price, and cash_flows
     """
     provider = get_provider()
     
@@ -176,7 +181,7 @@ async def get_financial_metrics(
     )
 
 
-async def get_peers_valuation(symbol: str, fallback: bool = False) -> List[str]:
+async def get_peers_valuation(symbol: str, fallback: bool = False) -> PeerListResponse:
     """
     Fetch list of peer companies.
     
@@ -185,7 +190,7 @@ async def get_peers_valuation(symbol: str, fallback: bool = False) -> List[str]:
         fallback: If True, try alternative providers on failure
         
     Returns:
-        List of peer ticker symbols
+        PeerListResponse containing list of peer ticker symbols
     """
     provider = get_provider()
     

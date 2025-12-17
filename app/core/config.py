@@ -116,7 +116,7 @@ class Settings(BaseSettings):
     @property
     def DATA_DIR(self) -> Path:
         """สฟลเดอร์ data อัตโนมัติถ้ายังไม่มี"""
-        d = self.BASE_DIR / "data"
+        d = BASE_DIR / "data"
         d.mkdir(exist_ok=True)
         return d
 

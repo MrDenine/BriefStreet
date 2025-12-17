@@ -2,19 +2,22 @@
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 from app.models.sentiment import AnalysisResponse, KeyHighlight
+from app.models.market_data import TranscriptResponse
 
 @pytest.mark.asyncio
 async def test_read_root(client):
     """ทดสอบ Root Endpoint"""
     response = await client.get("/")
     assert response.status_code == 200
-    assert response.json() == {"message": "Welcome to BriefStreet API! 🚀"}
+    data = response.json()
+    assert data["message"] == "Welcome to BriefStreet API! 🚀"
+    assert data["version"] == "1.0.0"
 
 @pytest.mark.asyncio
 async def test_analyze_earnings_cache_miss(client, mock_transcript, mock_analysis_response):
     """ทดสอบ /analyze/{symbol} เมื่อยังไม่มีใน Cache"""
     
-    # Mock external services
+    # Mock external services - mock_transcript เป็น TranscriptResponse แล้วจาก conftest
     with patch("app.services.market_data.get_earnings_transcript", new=AsyncMock(return_value=mock_transcript)):
         with patch("app.services.llm_service.analyze_transcript") as mock_llm:
             # สร้าง Mock Response แบบ Pydantic
@@ -31,7 +34,7 @@ async def test_analyze_earnings_cache_miss(client, mock_transcript, mock_analysi
                 ]
             )
             
-            response = await client.post("/analyze/AAPL")
+            response = await client.post("/api/v1/analyze/AAPL")
             
             assert response.status_code == 200
             data = response.json()
@@ -64,7 +67,7 @@ async def test_analyze_earnings_cache_hit(client, test_session, mock_transcript)
     
     # Mock market_data ให้คืนข้อมูลเดิม
     with patch("app.services.market_data.get_earnings_transcript", new=AsyncMock(return_value=mock_transcript)):
-        response = await client.post("/analyze/TSLA")
+        response = await client.post("/api/v1/analyze/TSLA")
         
         assert response.status_code == 200
         data = response.json()
@@ -76,19 +79,21 @@ async def test_analyze_earnings_cache_hit(client, test_session, mock_transcript)
 async def test_analyze_earnings_invalid_symbol(client):
     """ทดสอบ Symbol ที่ไม่มีข้อมูล"""
     
-    with patch("app.services.market_data.get_earnings_transcript", new=AsyncMock(return_value=[])):
-        response = await client.post("/analyze/INVALID")
-        # ควร Handle Error หรือคืน Mock Data
-        assert response.status_code in [200, 404, 500]
+    # Mock provider ให้ throw exception
+    with patch("app.services.market_data.get_earnings_transcript", new=AsyncMock(side_effect=Exception("Symbol not found"))):
+        response = await client.post("/api/v1/analyze/INVALID")
+        # ควร Handle Error และคืน 500
+        assert response.status_code == 500
 
 @pytest.mark.asyncio
 async def test_chat_endpoint(client, mock_transcript):
     """ทดสอบ /chat/{symbol}"""
     
-    with patch("app.services.market_data.get_earnings_transcript", new=AsyncMock(return_value={"content": mock_transcript[0]["content"]})):
+    # mock_transcript เป็น TranscriptResponse แล้ว
+    with patch("app.services.market_data.get_earnings_transcript", new=AsyncMock(return_value=mock_transcript)):
         with patch("app.services.llm_service.chat_with_transcript", new=AsyncMock(return_value="Revenue grew by 25%")):
             response = await client.post(
-                "/chat/AAPL",
+                "/api/v1/chat/AAPL",
                 json={"question": "How much did revenue grow?"}
             )
             
@@ -117,9 +122,10 @@ async def test_consistency_endpoint(client, mock_transcript):
         "red_flag_warning": "Tone shifted from confident to cautious"
     }
     
-    with patch("app.services.market_data.get_earnings_transcript", new=AsyncMock(return_value={"content": mock_transcript[0]["content"]})):
+    # mock_transcript เป็น TranscriptResponse แล้ว
+    with patch("app.services.market_data.get_earnings_transcript", new=AsyncMock(return_value=mock_transcript)):
         with patch("app.services.llm_service.analyze_consistency", new=AsyncMock(return_value=mock_consistency)):
-            response = await client.post("/analyze/consistency/AAPL")
+            response = await client.post("/api/v1/analyze/consistency/AAPL")
             
             assert response.status_code == 200
             data = response.json()

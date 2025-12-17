@@ -20,12 +20,12 @@ async def analyze_earnings(
 ):
     symbol = symbol.upper()
     logger.info(f"📊 Analyzing earnings for symbol: {symbol}")
-    raw_data = await market_data.get_earnings_transcript(symbol)
     
-    transcript_text = raw_data['content']
-    call_date = raw_data['date'] 
-
     try:
+        raw_data = await market_data.get_earnings_transcript(symbol)
+        
+        transcript_text = raw_data.content  # Pydantic model attribute
+        call_date = raw_data.date  # Pydantic model attribute
         statement = select(EarningsCache).where(
             EarningsCache.symbol == symbol,
             EarningsCache.quarter_date == call_date
@@ -65,10 +65,14 @@ async def analyze_consistency(symbol: str):
     symbol = symbol.upper()
     logger.info(f"🕵️ Analyzing consistency for {symbol}")
     
-    raw_data = await market_data.get_earnings_transcript(symbol)
-    transcript_text = raw_data['content']
-    
-    result = await llm_service.analyze_consistency(symbol, transcript_text)
-    logger.info(f"✅ Consistency analysis completed for {symbol}")
-    
-    return result
+    try:
+        raw_data = await market_data.get_earnings_transcript(symbol)
+        transcript_text = raw_data.content  # Pydantic model attribute
+        
+        result = await llm_service.analyze_consistency(symbol, transcript_text)
+        logger.info(f"✅ Consistency analysis completed for {symbol}")
+        
+        return result
+    except Exception as e:
+        logger.error(f"❌ Error analyzing consistency for {symbol}: {str(e)}")
+        raise
