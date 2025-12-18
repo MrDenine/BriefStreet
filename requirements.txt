@@ -7,6 +7,7 @@ httpx
 python-dotenv
 sqlmodel 
 aiosqlite
+asyncpg
 yfinance
 
 pytest

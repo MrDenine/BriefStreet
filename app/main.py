@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from app.core.database import init_db, engine
 from app.core.error_handlers import register_exception_handlers
 from app.core.logging_config import setup_logging, get_logger
+from app.core.config import settings, RepositoryConfig
 from app.api.v1.endpoints import analyze_router, chat_router
 
 logger = get_logger(__name__)
@@ -13,7 +14,21 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging("INFO")
-    logger.info("🚀 Starting BriefStreet API...")
+    logger.info(f"🚀 Starting {settings.PROJECT_NAME}...")
+    logger.info(f"🌍 Environment: {settings.ENVIRONMENT}")
+    logger.info(f"🐛 Debug Mode: {settings.DEBUG}")
+    
+    # Initialize repository config
+    RepositoryConfig.initialize(settings.ENVIRONMENT)
+    
+    # แสดง database config
+    logger.info("📊 Database Configuration:")
+    for domain, config in RepositoryConfig.get_all().items():
+        logger.info(
+            f"  - {domain}: {config.strategy.value} "
+            f"(Primary: {config.primary_db.value})"
+        )
+    
     await init_db()
     logger.info("✅ Database connected successfully")
     
