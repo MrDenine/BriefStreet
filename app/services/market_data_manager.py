@@ -5,14 +5,14 @@ Market Data Manager - Orchestrator Service
 This service orchestrates the process of fetching data from external providers
 and persisting it to the database. It separates concerns:
 - market_data.py: Fetches from external providers (FMP, YFinance)
-- market_data_storage.py: Handles database persistence
+- market_data_persistence.py: Handles database persistence
 - market_data_manager.py: Orchestrates fetch → validate → store workflow
 """
 from typing import Optional, Dict, Any
 from datetime import datetime
 
 from app.services import market_data
-from app.services.market_data_storage import MarketDataStorageService
+from app.services.market_data_persistence import MarketDataPersistenceService
 from app.repositories.base import IMarketDataRepository
 from app.core.logging_config import get_logger
 from app.core.exceptions import DataFetchException
@@ -33,7 +33,7 @@ class MarketDataManager:
         Args:
             market_data_repo: Repository for persisting market data
         """
-        self.storage_service = MarketDataStorageService(market_data_repo)
+        self.storage_service = MarketDataPersistenceService(market_data_repo)
         logger.info("MarketDataManager initialized")
     
     async def sync_transcript(

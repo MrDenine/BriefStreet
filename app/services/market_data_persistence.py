@@ -1,8 +1,9 @@
-# app/services/market_data_storage.py
+# app/services/market_data_persistence.py
 """
-Service สำหรับจัดการ Market Data Storage
+Market Data Persistence Service
 
-เป็นตัวกลางระหว่าง data sources (FMP, YFinance) กับ repository
+Service layer สำหรับจัดการการบันทึกและดึงข้อมูล market data จาก database
+เป็น wrapper/facade ของ repository layer ที่ช่วยแยก business logic ออกจาก data access
 """
 
 from typing import Optional
@@ -12,7 +13,7 @@ from app.core.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-class MarketDataStorageService:
+class MarketDataPersistenceService:
     """
     Service สำหรับบันทึกและดึง market data จาก repository
     

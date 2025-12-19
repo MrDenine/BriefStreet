@@ -18,7 +18,7 @@ app/
 ├── models/
 │   └── market_data_storage.py               # Models สำหรับเก็บ market data
 ├── services/
-│   └── market_data_storage.py               # Service layer
+│   └── market_data_persistence.py           # Service layer for data persistence
 ├── config/
 │   └── repository_config.py                 # Environment-specific DB config
 └── core/
@@ -151,13 +151,13 @@ async def analyze_earnings(
     return result
 ```
 
-### Market Data Storage Service:
+### Market Data Persistence Service:
 
 ```python
-from app.services.market_data_storage import MarketDataStorageService
+from app.services.market_data_persistence import MarketDataPersistenceService
 
 # สร้าง service
-service = MarketDataStorageService(market_data_repo)
+service = MarketDataPersistenceService(market_data_repo)
 
 # บันทึก transcript
 await service.store_transcript(
