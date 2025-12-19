@@ -181,7 +181,7 @@ async def get_financial_metrics(
     )
 
 
-async def get_peers_valuation(symbol: str, fallback: bool = False) -> PeerListResponse:
+async def get_peers(symbol: str, fallback: bool = False) -> PeerListResponse:
     """
     Fetch list of peer companies.
     
@@ -219,3 +219,7 @@ async def get_peers_valuation(symbol: str, fallback: bool = False) -> PeerListRe
         attempted_providers=[p.name for p in providers],
         errors=errors
     )
+
+
+# Backward compatibility alias
+get_peers_valuation = get_peers
