@@ -15,6 +15,7 @@ from app.core.database import get_session
 from app.repositories.base import ICacheRepository, IMarketDataRepository
 from app.repositories.cache.sql_cache import SQLCacheRepository
 from app.repositories.market_data.sql_market_data import SQLMarketDataRepository
+from app.services.market_data_manager import MarketDataManager
 
 from app.core.logging_config import get_logger
 
@@ -96,3 +97,23 @@ def get_repository_factory(domain: str):
         raise ValueError(f"Unknown domain: {domain}")
     
     return factories[domain]
+
+
+# ======================
+# Market Data Manager (Orchestrator)
+# ======================
+
+async def get_market_data_manager(
+    market_data_repo: IMarketDataRepository = Depends(get_market_data_repository)
+) -> MarketDataManager:
+    """
+    Factory สำหรับ Market Data Manager (Orchestrator Service)
+    
+    Usage in endpoint:
+        manager: MarketDataManager = Depends(get_market_data_manager)
+        result = await manager.sync_transcript("AAPL", 3, 2024)
+    
+    Returns:
+        MarketDataManager instance with injected dependencies
+    """
+    return MarketDataManager(market_data_repo)
