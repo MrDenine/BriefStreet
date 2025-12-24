@@ -16,3 +16,4 @@ pytest-cov
 httpx
 pytest-mock
 faker
+xlsxwriter
