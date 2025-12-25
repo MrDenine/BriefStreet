@@ -3,9 +3,10 @@
 Pydantic models for market data responses.
 These models provide type safety and validation for data returned from providers.
 """
+import datetime
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from datetime import date as date_type
+from datetime import date as date_type, datetime
 
 class SearchSymbolResponse(BaseModel):
     """Response model for symbol search results"""
@@ -652,3 +653,26 @@ class ExecutiveCompensationResponse(BaseModel):
                 "link": "https://www.sec.gov/Archives/edgar/data/320193/000130817925000008/0001308179-25-000008-index.htm"
             }
         }
+
+class PriceCandle(BaseModel):
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+class SupportResistanceLevel(BaseModel):
+    price: float
+    strength: int = 1  # 1=weak, 3=strong (จำนวนครั้งที่ราคามาชนแล้วเด้ง)
+    type: str  # "SUPPORT" or "RESISTANCE"
+
+class TechnicalAnalysisResult(BaseModel):
+    symbol: str
+    current_price: float
+    trend: str = Field(..., description="UPTREND, DOWNTREND, SIDEWAY")
+    rsi: float
+    signal: str = Field(..., description="BUY_DIP, SELL_RALLY, WAIT")
+    support_levels: List[float]
+    resistance_levels: List[float]
+    analyzed_at: datetime = Field(default_factory=datetime.now)

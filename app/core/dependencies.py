@@ -12,10 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings, RepositoryConfig, DatabaseType
 from app.core.database import get_session
 
+from app.data_sources.base import DataSourceProvider
+from app.data_sources.yfinance_provider import YFinanceProvider
 from app.repositories.base import ICacheRepository, IMarketDataRepository
 from app.repositories.cache.sql_cache import SQLCacheRepository
 from app.repositories.market_data.sql_market_data import SQLMarketDataRepository
 from app.services.market_data_manager import MarketDataManager
+from app.services.market_scanner_service import MarketScannerService
+from app.services.technical_analysis_service import TechnicalAnalysisService
 
 from app.core.logging_config import get_logger
 
@@ -68,7 +72,32 @@ async def get_market_data_repository(
         yield SQLMarketDataRepository(session)
     else:
         raise ValueError(f"Unsupported database type for market_data: {config.primary_db}")
+    
+# ======================
+# Data Source Provider Factory
+# ======================
 
+def get_data_provider() -> DataSourceProvider:
+    """
+    Factory สำหรับ Data Source Provider
+    เลือกใช้ Provider ตาม Config (สำหรับ POC เราจะ Hardcode เป็น YFinance ก่อน)
+    """
+    
+    # ในอนาคตคุณสามารถใช้ settings.DATA_PROVIDER เพื่อเลือกได้
+    # provider_type = settings.DATA_PROVIDER 
+    
+    # สำหรับ POC: ใช้ YFinance เป็นค่าเริ่มต้น
+    return YFinanceProvider()
+
+def get_technical_analysis_service(
+    data_provider: DataSourceProvider = Depends(get_data_provider)
+) -> TechnicalAnalysisService:
+    return TechnicalAnalysisService(data_provider)
+
+def get_market_scanner_service(
+    analysis_service: TechnicalAnalysisService = Depends(get_technical_analysis_service)
+) -> MarketScannerService:
+    return MarketScannerService(analysis_service)
 
 # ======================
 # Universal Repository Getter (Optional)
@@ -117,3 +146,4 @@ async def get_market_data_manager(
         MarketDataManager instance with injected dependencies
     """
     return MarketDataManager(market_data_repo)
+

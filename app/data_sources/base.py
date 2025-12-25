@@ -4,7 +4,8 @@ from typing import List
 from app.models.market_data import (
     TranscriptResponse,
     FinancialMetricsResponse,
-    PeerListResponse
+    PeerListResponse,
+    PriceCandle
 )
 
 
@@ -15,6 +16,11 @@ class DataSourceProvider(ABC):
     This interface defines the contract that all data providers must implement.
     Providers can choose to raise ProviderNotImplementedException for features they don't support.
     """
+
+    @abstractmethod
+    async def get_historical_prices(self, symbol: str, interval: str = "1d", limit: int = 200) -> List[PriceCandle]:
+        """Fetch historical OHLCV data."""
+        pass
     
     @abstractmethod
     async def get_transcript(self, symbol: str, quarter: int, year: int) -> TranscriptResponse:

@@ -2,7 +2,7 @@
 """
 Market Data API Endpoints - Direct access to FMP provider data
 """
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from app.core.logging_config import get_logger
 from app.services import market_data
 from app.models.market_data import (
@@ -39,10 +39,12 @@ async def get_transcript(
         
         logger.info(f"✅ Successfully fetched transcript for {symbol} (Date: {result.date}, Length: {len(result.content)} chars)")
         return result
-        
+    except ValueError as e:
+        logger.warning(f"⚠️ Transcript not found: {symbol} Q{quarter} {year} - {str(e)}")
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"❌ Failed to fetch transcript for {symbol} Q{quarter} {year}: {str(e)}")
-        raise
+        logger.error(f"❌ Failed to fetch transcript for {symbol} Q{quarter} {year}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch transcript: {str(e)}")
 
 
 @router.get("/metrics/{symbol}", response_model=FinancialMetricsResponse)
@@ -77,10 +79,12 @@ async def get_financial_metrics(
             f"Cash Flows: {len(result.cash_flows)} periods"
         )
         return result
-        
+    except ValueError as e:
+        logger.warning(f"⚠️ Metrics not found: {symbol} - {str(e)}")
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"❌ Failed to fetch metrics for {symbol}: {str(e)}")
-        raise
+        logger.error(f"❌ Failed to fetch metrics for {symbol}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch metrics: {str(e)}")
 
 
 @router.get("/peers/{symbol}", response_model=PeerListResponse)
@@ -105,7 +109,9 @@ async def get_peers(symbol: str):
             logger.warning(f"⚠️  No peers found for {symbol}")
         
         return result
-        
+    except ValueError as e:
+        logger.warning(f"⚠️ Peers not found: {symbol} - {str(e)}")
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"❌ Failed to fetch peers for {symbol}: {str(e)}")
-        raise
+        logger.error(f"❌ Failed to fetch peers for {symbol}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch peers: {str(e)}")

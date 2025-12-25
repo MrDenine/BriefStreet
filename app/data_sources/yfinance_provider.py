@@ -1,5 +1,6 @@
 # app/data_sources/yfinance_provider.py
 import asyncio
+from typing import List
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
@@ -9,7 +10,8 @@ from app.models.market_data import (
     FinancialMetricsResponse,
     FinancialMetrics,
     CashFlowStatement,
-    PeerListResponse
+    PeerListResponse,
+    PriceCandle
 )
 from app.core.exceptions import (
     DataFetchException,
@@ -18,6 +20,9 @@ from app.core.exceptions import (
 )
 from app.core.decorators import handle_exceptions
 from app.core.logging_config import get_logger
+
+import pandas as pd
+
 
 logger = get_logger(__name__)
 
@@ -130,3 +135,32 @@ class YFinanceProvider(DataSourceProvider):
             provider=self.name,
             feature="peer_comparison"
         )
+    
+    @handle_exceptions(default_exception=DataFetchException)
+    async def get_historical_prices(self, symbol: str, interval: str = "1d", limit: int = 200) -> List[PriceCandle]:
+        try:
+            period_map = {"1d": "1y", "1h": "1mo", "15m": "5d"}
+            period = period_map.get(interval, "1y")
+            
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period=period, interval=interval)
+            
+            if hist.empty:
+                return []
+            
+            candles = []
+            for index, row in hist.iterrows():
+                candles.append(PriceCandle(
+                    timestamp=index.to_pydatetime(),
+                    open=float(row['Open']),
+                    high=float(row['High']),
+                    low=float(row['Low']),
+                    close=float(row['Close']),
+                    volume=int(row['Volume'])
+                ))
+            
+            return candles[-limit:]
+            
+        except Exception as e:
+            logger.error(f"Error fetching historical data for {symbol}: {str(e)}")
+            return []

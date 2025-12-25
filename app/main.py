@@ -7,10 +7,13 @@ from app.core.error_handlers import register_exception_handlers
 from app.core.logging_config import setup_logging, get_logger
 from app.core.config import settings, RepositoryConfig
 from app.core.middleware import APILoggingMiddleware, RequestIDMiddleware
-from app.api.v1.endpoints import analyze_router, chat_router, market_data_router
+from app.api.v1.endpoints import ( 
+    fundamental_router,
+    market_data_router, 
+    technical_router
+)
 
 logger = get_logger(__name__)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -54,9 +57,9 @@ app.add_middleware(RequestIDMiddleware)
 register_exception_handlers(app)
 
 # Include routers
-app.include_router(analyze_router, prefix="/api/v1", tags=["Analysis"])
-app.include_router(chat_router, prefix="/api/v1", tags=["Chat"])
+app.include_router(fundamental_router, prefix="/api/v1/fundamental", tags=["Fundamental Analysis"])
 app.include_router(market_data_router, prefix="/api/v1/market-data", tags=["Market Data"])
+app.include_router(technical_router, prefix="/api/v1/technical", tags=["Technical Analysis"])
 
 
 @app.get("/", tags=["Health"])

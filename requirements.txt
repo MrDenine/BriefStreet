@@ -10,6 +10,9 @@ aiosqlite
 asyncpg
 yfinance
 
+pandas
+pandas-ta
+
 pytest
 pytest-asyncio
 pytest-cov
