@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Body, Query, HTTPException
 from app.core.dependencies import get_technical_analysis_service, get_market_scanner_service
 from app.services.technical_analysis_service import TechnicalAnalysisService
 from app.services.market_scanner_service import MarketScannerService
-from app.models.market_data import TechnicalAnalysisResult
+from app.models.market_data import BacktestResult, TechnicalAnalysisResult
 from app.core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -97,3 +97,46 @@ async def scan_market(
     except Exception as e:
         logger.error(f"Error during market scan: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Market scan failed: {str(e)}")
+    
+@router.get("/backtest/{symbol}", response_model=BacktestResult)
+async def backtest_strategy(
+    symbol: str,
+    days: int = Query(365, ge=30, le=1000, description="Number of days to backtest"),
+    service: TechnicalAnalysisService = Depends(get_technical_analysis_service)
+):
+    """
+    Backtest 'Buy the Dip' strategy (Trend Following + RSI Pullback).
+    
+    - **symbol**: Stock/Crypto ticker (e.g., BTC-USD, AAPL)
+    - **days**: Number of historical days to test (default: 365)
+    """
+    logger.info(f"🔙 Starting backtest for {symbol} over {days} days")
+    
+    try:
+        # เรียกใช้ฟังก์ชัน backtest ที่เราเขียนไว้ใน Service
+        result = await service.backtest(symbol, days=days)
+        
+        # กรณีไม่เจอเทรดเลย (Service ส่งกลับมาเป็น dict ที่มี message)
+        if result.get("total_trades", 0) == 0 or "win_rate" not in result:
+            logger.info(f"ℹ️ No trades found for {symbol}")
+            # ส่งค่า 0 กลับไปทั้งหมดเพื่อไม่ให้ Error Response Model
+            return BacktestResult(
+                symbol=symbol,
+                period_days=days,
+                total_trades=0,
+                win_rate=0.0,
+                avg_return=0.0,
+                best_trade=0.0,
+                worst_trade=0.0,
+                recent_trades=[]
+            )
+
+        logger.info(f"✅ Backtest for {symbol} completed. Win Rate: {result['win_rate']}%")
+        return result
+
+    except ValueError as e:
+        logger.warning(f"Backtest warning for {symbol}: {str(e)}")
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Backtest error for {symbol}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

@@ -676,3 +676,21 @@ class TechnicalAnalysisResult(BaseModel):
     support_levels: List[float]
     resistance_levels: List[float]
     analyzed_at: datetime = Field(default_factory=datetime.now)
+
+class TradeRecord(BaseModel):
+    entry_date: datetime
+    entry_price: float
+    exit_date: datetime
+    exit_price: float
+    pnl_percent: float
+    win: bool
+
+class BacktestResult(BaseModel):
+    symbol: str
+    period_days: int
+    total_trades: int
+    win_rate: float
+    avg_return: float
+    best_trade: float
+    worst_trade: float
+    recent_trades: List[TradeRecord]

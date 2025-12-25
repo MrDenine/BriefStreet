@@ -10,6 +10,10 @@ aiosqlite
 asyncpg
 yfinance
 
+streamlit 
+plotly 
+requests
+
 pandas
 pandas-ta
 
