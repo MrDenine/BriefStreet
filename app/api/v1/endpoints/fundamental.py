@@ -97,33 +97,6 @@ async def analyze_consistency(symbol: str):
         raise
 
 
-# ============================================================================
-# CHAT WITH EARNINGS
-# ============================================================================
-
-@router.post("/chat/{symbol}", response_model=ChatResponse)
-async def chat_earnings(symbol: str, request: ChatRequest):
-    """
-    สนทนาเกี่ยวกับ Earnings Call Transcript ด้วย AI
-    """
-    symbol = symbol.upper()
-    logger.info(f"💬 Chat request for {symbol}: {request.question[:50]}...")
-    
-    try:
-        raw_data = await market_data.get_earnings_transcript(symbol)
-        transcript_text = raw_data.content  # Pydantic model attribute
-        
-        answer_text = await llm_service.chat_with_transcript(symbol, transcript_text, request.question)
-        logger.info(f"✅ Chat response generated for {symbol}")
-        
-        return ChatResponse(answer=answer_text)
-    except ValueError as e:
-        logger.warning(f"⚠️ Invalid input for chat {symbol}: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"❌ Error in chat for {symbol}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
-
 
 # ============================================================================
 # VALUATION ANALYSIS

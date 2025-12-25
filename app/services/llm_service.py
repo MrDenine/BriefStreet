@@ -6,6 +6,7 @@ from app.models.sentiment import AnalysisResponse , ConsistencyResponse
 from app.core.exceptions import LLMServiceException
 from app.core.decorators import handle_exceptions, retry_on_exception
 from app.core.logging_config import get_logger
+from app.models.market_data import TechnicalAnalysisResult
 
 logger = get_logger(__name__)
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -160,4 +161,69 @@ async def analyze_consistency(symbol: str, text: str) -> ConsistencyResponse:
             details={"symbol": symbol, "error_type": type(e).__name__}
         )
 
-    return completion.choices[0].message.parsed
+@retry_on_exception(max_retries=settings.LLM_MAX_RETRIES, exceptions=(OpenAIError,), delay=settings.LLM_RETRY_DELAY)
+@handle_exceptions(default_exception=LLMServiceException)
+def analyze_technical_outlook(symbol: str, tech_data: TechnicalAnalysisResult, question: str) -> str:
+    """
+    วิเคราะห์ข้อมูล Technical Analysis และให้คำแนะนำการลงทุนแบบ Mentor
+    """
+    logger.info(f"🧠 AI analyzing technical outlook for {symbol}")
+    
+    # แปลงข้อมูล Technical เป็นข้อความ (Context String)
+    context_str = f"""
+    Symbol: {symbol}
+    Price: {tech_data.current_price}
+    Trend (Main): {tech_data.trend}
+    RSI (Momentum): {tech_data.rsi}
+    Signal System: {tech_data.signal}
+    Support Levels: {tech_data.support_levels}
+    Resistance Levels: {tech_data.resistance_levels}
+    """
+
+    system_prompt = f"""
+    You are 'BriefStreet AI Mentor', an experienced investment coach for retail traders.
+    
+    Your Task:
+    1. Read the provided 'Technical Data' for {symbol}.
+    2. Answer the User's question based on this data.
+    3. Explain the technical concepts in simple terms (e.g., explain what RSI means in this context).
+    4. Recommend a strategy based on the 'Signal System':
+       - If Signal is 'BUY_DIP': Encourage patience to buy at support levels.
+       - If Signal is 'WAIT': Advise caution, don't chase price.
+       - If Signal is 'SELL_RALLY': Warn about resistance/overbought status.
+    5. Tone: Encouraging, Educational, Professional, but Cautionary (manage risk).
+    6. Language: Reply in the same language as the user's question (Thai/English).
+    
+    IMPORTANT:
+    - Do not invent prices. Use the provided levels.
+    - Always remind user about risk management.
+    """
+
+    user_prompt = f"""
+    Technical Data:
+    {context_str}
+    
+    User Question: "{question}"
+    """
+
+    try:
+        # หมายเหตุ: ใช้ client.chat.completions.create แบบ sync เพราะ client เป็น OpenAI (Sync)
+        completion = client.chat.completions.create(
+            model=settings.LLM_CHAT_MODEL, # ใช้ Model สำหรับ Chat (เช่น gpt-3.5-turbo หรือ gpt-4)
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.7 # เพิ่มความ Creative นิดหน่อยให้ดูเป็นธรรมชาติ
+        )
+
+        answer = completion.choices[0].message.content
+        logger.info(f"✅ Technical outlook generated for {symbol}")
+        return answer
+        
+    except OpenAIError as e:
+        logger.error(f"OpenAI error for technical analysis {symbol}: {str(e)}")
+        raise LLMServiceException(
+            message=f"AI analysis failed: {str(e)}",
+            details={"symbol": symbol}
+        )

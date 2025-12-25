@@ -10,7 +10,8 @@ from app.core.middleware import APILoggingMiddleware, RequestIDMiddleware
 from app.api.v1.endpoints import ( 
     fundamental_router,
     market_data_router, 
-    technical_router
+    technical_router,
+    chat_router
 )
 
 logger = get_logger(__name__)
@@ -60,6 +61,7 @@ register_exception_handlers(app)
 app.include_router(fundamental_router, prefix="/api/v1/fundamental", tags=["Fundamental Analysis"])
 app.include_router(market_data_router, prefix="/api/v1/market-data", tags=["Market Data"])
 app.include_router(technical_router, prefix="/api/v1/technical", tags=["Technical Analysis"])
+app.include_router(chat_router, prefix="/api/v1/chat", tags=["Chat"])
 
 
 @app.get("/", tags=["Health"])

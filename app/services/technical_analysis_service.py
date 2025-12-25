@@ -11,6 +11,8 @@ class TechnicalAnalysisService:
     async def analyze(self, symbol: str) -> TechnicalAnalysisResult:
         candles = await self.data_provider.get_historical_prices(symbol, interval="1d", limit=300)
 
+        realtime_price = await self.data_provider.get_latest_price(symbol)
+
         if not candles:
             raise ValueError(f"No historical data found for {symbol}")
         
@@ -48,9 +50,11 @@ class TechnicalAnalysisService:
         recent_low = df['low'].tail(20).min()
         recent_high = df['high'].tail(20).max()
 
+        final_price = realtime_price if realtime_price > 0 else current['close']
+
         return TechnicalAnalysisResult(
             symbol=symbol,
-            current_price=current['close'],
+            current_price=final_price,
             trend=trend,
             rsi=round(current['RSI'], 2),
             signal=signal,

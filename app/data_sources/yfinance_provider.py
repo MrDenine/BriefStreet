@@ -164,3 +164,25 @@ class YFinanceProvider(DataSourceProvider):
         except Exception as e:
             logger.error(f"Error fetching historical data for {symbol}: {str(e)}")
             return []
+
+    @handle_exceptions(default_exception=DataFetchException)
+    async def get_latest_price(self, symbol: str) -> float:
+        """
+        ดึงราคาล่าสุดแบบ Real-time (ที่สุดเท่าที่ yfinance จะให้ได้)
+        โดยการขอข้อมูลกราฟ 1 นาที ย้อนหลัง 1 วัน
+        """
+        try:
+            ticker = yf.Ticker(symbol)
+            # ขอข้อมูลรายนาที (1m) ช่วงสั้นๆ เพื่อเอาราคาล่าสุด
+            df = ticker.history(period="1d", interval="1m")
+            
+            if df.empty:
+                # Fallback: ถ้า 1m ไม่มี ให้ลองดู info (บางทีช้ากว่าแต่ชัวร์กว่าในบางเคส)
+                return ticker.info.get('regularMarketPrice') or 0.0
+            
+            # return ราคาปิดของแท่งล่าสุด (ซึ่งคือราคาปัจจุบัน)
+            return float(df['Close'].iloc[-1])
+            
+        except Exception as e:
+            logger.error(f"Error fetching latest price for {symbol}: {e}")
+            return 0.0

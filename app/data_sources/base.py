@@ -21,6 +21,11 @@ class DataSourceProvider(ABC):
     async def get_historical_prices(self, symbol: str, interval: str = "1d", limit: int = 200) -> List[PriceCandle]:
         """Fetch historical OHLCV data."""
         pass
+
+    @abstractmethod
+    async def get_latest_price(self, symbol: str) -> float:
+        """Fetch the latest price for a given symbol."""
+        pass
     
     @abstractmethod
     async def get_transcript(self, symbol: str, quarter: int, year: int) -> TranscriptResponse:
