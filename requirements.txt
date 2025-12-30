@@ -24,3 +24,11 @@ httpx
 pytest-mock
 faker
 xlsxwriter
+
+seaborn
+matplotlib
+scipy
+statsmodels
+
+scikit-learn
+arch
