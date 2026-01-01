@@ -32,3 +32,6 @@ statsmodels
 
 scikit-learn
 arch
+
+ccxt
+apscheduler

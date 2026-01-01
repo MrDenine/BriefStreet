@@ -32,4 +32,11 @@ async def get_session():
     async with async_session() as session:
         yield session
 
-    
+# Alias สำหรับความสะดวก
+async def get_db():
+    """Dependency สำหรับ database session (alias ของ get_session)"""
+    async_session = sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with async_session() as session:
+        yield session
