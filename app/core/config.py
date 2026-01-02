@@ -65,6 +65,16 @@ class Settings(BaseSettings):
     FMP_API_KEY: str
     
     # ======================
+    # Trading Bot Configuration
+    # ======================
+    # Binance API Keys (Optional - for live trading)
+    BINANCE_API_KEY: str = ""
+    BINANCE_SECRET_KEY: str = ""
+    
+    # Bot Scheduler Settings
+    BOT_INTERVAL_MINUTES: int = 1  # รันทุกกี่นาที
+    
+    # ======================
     # Database Configuration
     # ======================
     

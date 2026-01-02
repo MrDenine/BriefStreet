@@ -5,6 +5,7 @@ from sqlmodel import select
 from typing import List, Dict, Any
 from pydantic import BaseModel
 from app.services.scheduler_service import bot_job_wrapper
+from app.services.bot_engine import BotEngine
 from app.models.bot_config import BotConfig
 from app.core.database import get_db
 import logging
@@ -159,4 +160,101 @@ async def delete_bot(symbol: str, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         await db.rollback()
         logger.error(f"Failed to delete bot: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/bots/create-and-test")
+async def create_and_test_bot(bot_data: BotCreateRequest, db: AsyncSession = Depends(get_db)):
+    """
+    สร้าง Bot instance ใหม่และทดสอบการทำงานทันทีในเส้นเดียว
+    - ถ้ายังไม่มี bot สำหรับ symbol นี้ → สร้างใหม่
+    - ถ้ามีอยู่แล้ว → อัพเดท strategy และ parameters แล้วทดสอบเลย (ไม่ต้องสร้างใหม่)
+    - return ทั้ง bot config และผลลัพธ์จากการทดสอบ
+    """
+    try:
+        # 1. ตรวจสอบว่ามี symbol อยู่แล้วหรือไม่
+        statement = select(BotConfig).where(BotConfig.symbol == bot_data.symbol)
+        result = await db.execute(statement)
+        existing_bot = result.scalar_one_or_none()
+        
+        bot_to_test = None
+        action = "created"
+        
+        if existing_bot:
+            # ✅ มีอยู่แล้ว → อัพเดท config แล้วทดสอบเลย
+            existing_bot.strategy_name = bot_data.strategy_name
+            existing_bot.parameters = bot_data.parameters
+            # ไม่เปลี่ยน is_active เพื่อรักษาสถานะเดิม (ไม่ให้ bot หยุดทำงานถ้ากำลังรันอยู่)
+            
+            await db.commit()
+            await db.refresh(existing_bot)
+            
+            bot_to_test = existing_bot
+            action = "updated"
+            logger.info(f"Updated existing bot: {bot_data.symbol}")
+            
+        else:
+            # ✅ ยังไม่มี → สร้างใหม่
+            new_bot = BotConfig(
+                symbol=bot_data.symbol,
+                strategy_name=bot_data.strategy_name,
+                parameters=bot_data.parameters,
+                is_active=bot_data.is_active
+            )
+            
+            db.add(new_bot)
+            await db.commit()
+            await db.refresh(new_bot)
+            
+            bot_to_test = new_bot
+            action = "created"
+            logger.info(f"Created new bot: {bot_data.symbol}")
+        
+        # 3. ทดสอบ Bot ทันที (ส่ง db session เข้าไป)
+        bot_engine = BotEngine(db=db)
+        test_result = {
+            "test_executed": False,
+            "message": "Test skipped",
+            "details": None
+        }
+        
+        try:
+            logger.info(f"Testing bot: {bot_data.symbol}")
+            await bot_engine.process_bot(bot_to_test)
+            
+            # Refresh เพื่อดึงข้อมูลล่าสุดหลังจากทดสอบเสร็จ
+            await db.refresh(bot_to_test)
+            
+            test_result = {
+                "test_executed": True,
+                "message": "Bot test completed successfully",
+                "details": {
+                    "symbol": bot_to_test.symbol,
+                    "strategy": bot_to_test.strategy_name,
+                    "last_action": bot_to_test.last_action,
+                    "updated_at": str(bot_to_test.updated_at)
+                }
+            }
+            logger.info(f"Bot test successful: {bot_data.symbol}")
+            
+        except Exception as test_error:
+            logger.error(f"Bot test failed for {bot_data.symbol}: {test_error}")
+            test_result = {
+                "test_executed": True,
+                "message": "Bot test failed",
+                "details": {"error": str(test_error)}
+            }
+        
+        # 4. Return ทั้ง bot config และผลลัพธ์การทดสอบ
+        return {
+            "status": "success",
+            "action": action,  # "created" หรือ "updated"
+            "bot": bot_to_test,
+            "test_result": test_result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to create and test bot: {e}")
         raise HTTPException(status_code=500, detail=str(e))

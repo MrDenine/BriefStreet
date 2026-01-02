@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import engine  
 from app.services.bot_engine import BotEngine
 import logging
+from app.core.config import settings
+
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +60,7 @@ def bot_job_wrapper():
 def start_scheduler():
     """เริ่มทำงาน Scheduler (เรียกจาก main.py)"""
     if not scheduler.running:
-        # ✅ ดึง interval จาก environment หรือใช้ default 1 นาที
-        import os
-        interval_minutes = int(os.getenv("BOT_INTERVAL_MINUTES", "1"))
+        interval_minutes = settings.BOT_INTERVAL_MINUTES
         
         scheduler.add_job(
             bot_job_wrapper, 
