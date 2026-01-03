@@ -20,6 +20,9 @@ from app.repositories.market_data.sql_market_data import SQLMarketDataRepository
 from app.services.market_data_manager import MarketDataManager
 from app.services.market_scanner_service import MarketScannerService
 from app.services.technical_analysis_service import TechnicalAnalysisService
+from app.services.backtest_service import BacktestService
+from app.services.portfolio_backtest_service import PortfolioBacktestService
+from app.services.optimization_service import ParameterOptimizationService
 
 from app.core.logging_config import get_logger
 
@@ -98,6 +101,24 @@ def get_market_scanner_service(
     analysis_service: TechnicalAnalysisService = Depends(get_technical_analysis_service)
 ) -> MarketScannerService:
     return MarketScannerService(analysis_service)
+
+def get_backtest_service(
+    data_provider: DataSourceProvider = Depends(get_data_provider)
+) -> BacktestService:
+    """Factory for Backtest Service with Strategy Pattern support"""
+    return BacktestService(data_provider)
+
+def get_portfolio_backtest_service(
+    data_provider: DataSourceProvider = Depends(get_data_provider)
+) -> PortfolioBacktestService:
+    """Factory for Portfolio Backtest Service"""
+    return PortfolioBacktestService(data_provider)
+
+def get_optimization_service(
+    backtest_service: BacktestService = Depends(get_backtest_service)
+) -> ParameterOptimizationService:
+    """Factory for Parameter Optimization Service"""
+    return ParameterOptimizationService(backtest_service)
 
 # ======================
 # Universal Repository Getter (Optional)

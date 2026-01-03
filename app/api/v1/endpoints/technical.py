@@ -2,13 +2,33 @@
 Technical Analysis Endpoints
 - Single Symbol Technical Analysis (Trend, RSI, Signals)
 - Market Scanner (Multiple symbols with filters)
+- Backtesting with Strategy Pattern
+- Portfolio Backtesting
+- Parameter Optimization
 """
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Body, Query, HTTPException
-from app.core.dependencies import get_technical_analysis_service, get_market_scanner_service
+from app.core.dependencies import (
+    get_technical_analysis_service, 
+    get_market_scanner_service,
+    get_backtest_service,
+    get_portfolio_backtest_service,
+    get_optimization_service
+)
 from app.services.technical_analysis_service import TechnicalAnalysisService
 from app.services.market_scanner_service import MarketScannerService
-from app.models.market_data import BacktestResult, TechnicalAnalysisResult
+from app.services.backtest_service import BacktestService
+from app.services.portfolio_backtest_service import PortfolioBacktestService
+from app.services.optimization_service import ParameterOptimizationService, ParameterRange
+from app.strategies.base_strategy import StrategyConfig
+from app.models.backtest import (
+    BacktestResult, 
+    PortfolioBacktestResult,
+    OptimizationResult,
+    TransactionCosts,
+    PositionSizing
+)
+from app.models.market_data import TechnicalAnalysisResult
 from app.core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -98,45 +118,380 @@ async def scan_market(
         logger.error(f"Error during market scan: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Market scan failed: {str(e)}")
     
-@router.get("/backtest/{symbol}", response_model=BacktestResult)
-async def backtest_strategy(
-    symbol: str,
-    days: int = Query(365, ge=30, le=1000, description="Number of days to backtest"),
-    service: TechnicalAnalysisService = Depends(get_technical_analysis_service)
+# ============================================================================
+# BACKTESTING WITH STRATEGY PATTERN
+# ============================================================================
+
+@router.get("/strategies", tags=["Backtest"])
+async def list_strategies(
+    service: BacktestService = Depends(get_backtest_service)
 ):
     """
-    Backtest 'Buy the Dip' strategy (Trend Following + RSI Pullback).
+    List all available trading strategies.
     
-    - **symbol**: Stock/Crypto ticker (e.g., BTC-USD, AAPL)
-    - **days**: Number of historical days to test (default: 365)
+    Returns:
+        List of strategy names and their default configurations
     """
-    logger.info(f"🔙 Starting backtest for {symbol} over {days} days")
+    try:
+        strategies = await service.get_available_strategies()
+        
+        # Get info for each strategy
+        strategy_info = {}
+        for name in strategies:
+            info = await service.get_strategy_info(name)
+            strategy_info[name] = info
+        
+        return {
+            "available_strategies": strategies,
+            "strategy_details": strategy_info
+        }
+    except Exception as e:
+        logger.error(f"Error listing strategies: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/backtest/{symbol}", response_model=BacktestResult, tags=["Backtest"])
+async def backtest_strategy(
+    symbol: str,
+    strategy: str = Query("buy_the_dip", description="Strategy name (buy_the_dip, mean_reversion, momentum)"),
+    days: int = Query(365, ge=30, le=1000, description="Number of days to backtest"),
+    service: BacktestService = Depends(get_backtest_service)
+):
+    """
+    Backtest a trading strategy on historical data.
+    
+    **Available Strategies:**
+    - `buy_the_dip`: Trend following + RSI pullback
+    - `mean_reversion`: Bollinger Bands mean reversion  
+    - `momentum`: EMA crossover + momentum confirmation
+    
+    **Parameters:**
+    - **symbol**: Stock/Crypto ticker (e.g., AAPL, BTC-USD)
+    - **strategy**: Strategy name (default: buy_the_dip)
+    - **days**: Historical days to test (default: 365)
+    
+    **Returns:**
+    - Win rate, average return, Sharpe ratio
+    - Maximum drawdown, profit factor
+    - Recent trade history
+    """
+    logger.info(f"🔙 Starting backtest for {symbol} with strategy '{strategy}' over {days} days")
     
     try:
-        # เรียกใช้ฟังก์ชัน backtest ที่เราเขียนไว้ใน Service
-        result = await service.backtest(symbol, days=days)
+        result = await service.run_backtest(
+            symbol=symbol,
+            strategy_name=strategy,
+            days=days
+        )
         
-        # กรณีไม่เจอเทรดเลย (Service ส่งกลับมาเป็น dict ที่มี message)
-        if result.get("total_trades", 0) == 0 or "win_rate" not in result:
-            logger.info(f"ℹ️ No trades found for {symbol}")
-            # ส่งค่า 0 กลับไปทั้งหมดเพื่อไม่ให้ Error Response Model
-            return BacktestResult(
-                symbol=symbol,
-                period_days=days,
-                total_trades=0,
-                win_rate=0.0,
-                avg_return=0.0,
-                best_trade=0.0,
-                worst_trade=0.0,
-                recent_trades=[]
-            )
-
-        logger.info(f"✅ Backtest for {symbol} completed. Win Rate: {result['win_rate']}%")
+        logger.info(
+            f"✅ Backtest completed: {result.total_trades} trades, "
+            f"{result.win_rate}% win rate, {result.avg_return}% avg return"
+        )
+        
         return result
-
+        
     except ValueError as e:
-        logger.warning(f"Backtest warning for {symbol}: {str(e)}")
-        raise HTTPException(status_code=404, detail=str(e))
+        logger.warning(f"Backtest validation error for {symbol}: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Backtest error for {symbol}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/backtest/{symbol}/custom", response_model=BacktestResult, tags=["Backtest"])
+async def backtest_with_custom_config(
+    symbol: str,
+    strategy_name: str = Query(..., description="Strategy name"),
+    config: StrategyConfig = Body(..., description="Custom strategy configuration"),
+    days: int = Query(365, ge=30, le=1000, description="Number of days to backtest"),
+    service: BacktestService = Depends(get_backtest_service)
+):
+    """
+    Backtest with custom strategy configuration.
+    
+    This endpoint allows you to customize strategy parameters:
+    - Holding days
+    - Stop loss / Take profit levels
+    - Strategy-specific indicators (RSI threshold, EMA length, etc.)
+    
+    **Example Request Body:**
+    ```json
+    {
+        "name": "buy_the_dip",
+        "holding_days": 7,
+        "stop_loss_pct": 3.0,
+        "take_profit_pct": 12.0,
+        "parameters": {
+            "ema_length": 150,
+            "rsi_threshold": 30
+        }
+    }
+    ```
+    """
+    logger.info(
+        f"🔙 Starting custom backtest for {symbol} with {strategy_name} "
+        f"(holding: {config.holding_days}d, SL: {config.stop_loss_pct}%, TP: {config.take_profit_pct}%)"
+    )
+    
+    try:
+        result = await service.run_backtest(
+            symbol=symbol,
+            strategy_name=strategy_name,
+            days=days,
+            config=config
+        )
+        
+        logger.info(f"✅ Custom backtest completed for {symbol}")
+        return result
+        
+    except ValueError as e:
+        logger.warning(f"Custom backtest validation error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Custom backtest error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# PORTFOLIO BACKTESTING
+# ============================================================================
+
+@router.post("/backtest/portfolio", response_model=PortfolioBacktestResult, tags=["Portfolio"])
+async def backtest_portfolio(
+    symbols: List[str] = Body(..., description="List of symbols to backtest"),
+    strategy: str = Query("buy_the_dip", description="Strategy name"),
+    days: int = Query(365, ge=30, le=1000, description="Number of days"),
+    initial_capital: float = Query(100000.0, description="Initial capital"),
+    service: PortfolioBacktestService = Depends(get_portfolio_backtest_service)
+):
+    """
+    Backtest a portfolio of multiple symbols simultaneously.
+    
+    **Benefits:**
+    - Diversification analysis
+    - Portfolio-level metrics
+    - Correlation analysis
+    - Capital allocation
+    
+    **Example:**
+    ```json
+    {
+        "symbols": ["AAPL", "MSFT", "GOOGL"],
+        "strategy": "buy_the_dip",
+        "days": 365,
+        "initial_capital": 100000
+    }
+    ```
+    """
+    logger.info(f"📊 Starting portfolio backtest with {len(symbols)} symbols: {symbols}")
+    
+    try:
+        result = await service.run_portfolio_backtest(
+            symbols=symbols,
+            strategy_name=strategy,
+            days=days,
+            initial_capital=initial_capital
+        )
+        
+        logger.info(
+            f"✅ Portfolio backtest completed: {result.total_return:.2f}% return, "
+            f"Sharpe: {result.sharpe_ratio:.2f}"
+        )
+        
+        return result
+        
+    except ValueError as e:
+        logger.warning(f"Portfolio backtest error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Portfolio backtest error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/backtest/compare-strategies", tags=["Portfolio"])
+async def compare_strategies(
+    symbol: str = Query(..., description="Symbol to test"),
+    strategies: List[str] = Body(..., description="List of strategy names"),
+    days: int = Query(365, ge=30, le=1000, description="Number of days"),
+    service: PortfolioBacktestService = Depends(get_portfolio_backtest_service)
+):
+    """
+    Compare multiple strategies on the same symbol.
+    
+    **Example:**
+    ```json
+    {
+        "symbol": "AAPL",
+        "strategies": ["buy_the_dip", "mean_reversion", "momentum"],
+        "days": 365
+    }
+    ```
+    
+    **Returns:**
+    Dict with each strategy's results for easy comparison.
+    """
+    logger.info(f"⚖️  Comparing {len(strategies)} strategies on {symbol}")
+    
+    try:
+        results = await service.compare_strategies(
+            symbol=symbol,
+            strategy_names=strategies,
+            days=days
+        )
+        
+        # Summary
+        summary = {
+            "symbol": symbol,
+            "strategies_tested": len(strategies),
+            "comparison": {
+                name: {
+                    "total_return": result.total_return,
+                    "sharpe_ratio": result.sharpe_ratio,
+                    "win_rate": result.win_rate,
+                    "max_drawdown": result.max_drawdown,
+                    "total_trades": result.total_trades
+                }
+                for name, result in results.items()
+            },
+            "detailed_results": results
+        }
+        
+        logger.info(f"✅ Strategy comparison completed")
+        return summary
+        
+    except Exception as e:
+        logger.error(f"Strategy comparison error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# PARAMETER OPTIMIZATION
+# ============================================================================
+
+@router.post("/optimize/{symbol}", response_model=OptimizationResult, tags=["Optimization"])
+async def optimize_parameters(
+    symbol: str,
+    strategy: str = Query(..., description="Strategy to optimize"),
+    days: int = Query(365, ge=30, le=1000, description="Number of days"),
+    metric: str = Query("sharpe_ratio", description="Metric to optimize"),
+    use_default_ranges: bool = Query(True, description="Use default parameter ranges"),
+    service: ParameterOptimizationService = Depends(get_optimization_service)
+):
+    """
+    Find optimal parameters for a strategy using grid search.
+    
+    **Optimization Metrics:**
+    - `sharpe_ratio`: Risk-adjusted returns (recommended)
+    - `total_return`: Maximum returns
+    - `profit_factor`: Profit/loss ratio
+    - `win_rate`: Win percentage
+    - `alpha`: Excess return vs buy & hold
+    
+    **Example:**
+    ```
+    GET /optimize/AAPL?strategy=buy_the_dip&metric=sharpe_ratio
+    ```
+    
+    **Returns:**
+    - Best parameter configuration
+    - Top 10 configurations
+    - Performance metrics
+    """
+    logger.info(f"🔍 Optimizing {strategy} for {symbol} on {metric}")
+    
+    try:
+        # Get parameter ranges
+        if use_default_ranges:
+            param_ranges = service.get_default_ranges(strategy)
+        else:
+            # Could add custom ranges in request body
+            param_ranges = service.get_default_ranges(strategy)
+        
+        if not param_ranges:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No default parameter ranges for strategy '{strategy}'"
+            )
+        
+        # Run optimization
+        result = await service.optimize_grid_search(
+            symbol=symbol,
+            strategy_name=strategy,
+            parameter_ranges=param_ranges,
+            days=days,
+            optimization_metric=metric,
+            max_parallel=3  # Limit to avoid overwhelming the system
+        )
+        
+        logger.info(
+            f"✅ Optimization completed: Best {metric} = {result.best_score:.2f}"
+        )
+        
+        return result
+        
+    except ValueError as e:
+        logger.warning(f"Optimization error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Optimization error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/optimize/{symbol}/walk-forward", tags=["Optimization"])
+async def walk_forward_analysis(
+    symbol: str,
+    strategy: str = Query(..., description="Strategy to test"),
+    total_days: int = Query(730, ge=365, le=1825, description="Total period (2-5 years)"),
+    metric: str = Query("sharpe_ratio", description="Optimization metric"),
+    service: ParameterOptimizationService = Depends(get_optimization_service)
+):
+    """
+    Perform walk-forward analysis to test for overfitting.
+    
+    **Process:**
+    1. **Train (60%)**: Optimize parameters
+    2. **Validation (20%)**: Test parameters
+    3. **Test (20%)**: Out-of-sample validation
+    
+    **Benefits:**
+    - Detects overfitting
+    - More realistic performance estimates
+    - Validates strategy robustness
+    
+    **Example:**
+    ```
+    POST /optimize/AAPL/walk-forward?strategy=buy_the_dip&total_days=730
+    ```
+    """
+    logger.info(f"🔄 Walk-forward analysis for {symbol} ({total_days} days)")
+    
+    try:
+        param_ranges = service.get_default_ranges(strategy)
+        
+        if not param_ranges:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No default parameter ranges for strategy '{strategy}'"
+            )
+        
+        result = await service.walk_forward_analysis(
+            symbol=symbol,
+            strategy_name=strategy,
+            parameter_ranges=param_ranges,
+            total_days=total_days,
+            optimization_metric=metric
+        )
+        
+        logger.info(
+            f"✅ Walk-forward completed: Overfitting score = {result['overfitting_score']:.1f}%"
+        )
+        
+        return result
+        
+    except ValueError as e:
+        logger.warning(f"Walk-forward error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Walk-forward error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

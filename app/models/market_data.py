@@ -687,10 +687,45 @@ class TradeRecord(BaseModel):
 
 class BacktestResult(BaseModel):
     symbol: str
+    strategy_name: str = Field(default="buy_the_dip", description="Name of the strategy used")
+    strategy_config: dict = Field(default_factory=dict, description="Strategy configuration used")
     period_days: int
     total_trades: int
-    win_rate: float
-    avg_return: float
-    best_trade: float
-    worst_trade: float
-    recent_trades: List[TradeRecord]
+    win_rate: float = Field(..., description="Percentage of winning trades")
+    avg_return: float = Field(..., description="Average return per trade (%)")
+    best_trade: float = Field(..., description="Best trade return (%)")
+    worst_trade: float = Field(..., description="Worst trade return (%)")
+    total_return: float = Field(default=0.0, description="Total cumulative return (%)")
+    sharpe_ratio: float = Field(default=0.0, description="Risk-adjusted return metric")
+    max_drawdown: float = Field(default=0.0, description="Maximum drawdown (%)")
+    profit_factor: float = Field(default=0.0, description="Ratio of gross profit to gross loss")
+    recent_trades: List[TradeRecord] = Field(default_factory=list, description="Recent trade records")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "symbol": "AAPL",
+                "strategy_name": "buy_the_dip",
+                "strategy_config": {
+                    "name": "buy_the_dip",
+                    "holding_days": 5,
+                    "stop_loss_pct": 5.0,
+                    "take_profit_pct": 10.0,
+                    "parameters": {
+                        "ema_length": 200,
+                        "rsi_threshold": 35
+                    }
+                },
+                "period_days": 365,
+                "total_trades": 24,
+                "win_rate": 62.5,
+                "avg_return": 2.34,
+                "best_trade": 12.5,
+                "worst_trade": -4.2,
+                "total_return": 56.16,
+                "sharpe_ratio": 1.45,
+                "max_drawdown": 8.3,
+                "profit_factor": 2.1,
+                "recent_trades": []
+            }
+        }
